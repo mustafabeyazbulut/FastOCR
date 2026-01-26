@@ -140,14 +140,14 @@ async def upload_pdf(
 @router.post("/upload-image", response_model=ImageOCRResponse)
 async def upload_image(
     file: UploadFile = File(..., description="Yüklenecek görüntü dosyası (JPG, PNG, JPEG)"),
-    language: Optional[str] = Form("tur+eng", description="OCR dil kodu (tur, eng veya tur+eng)")
+    language: Optional[str] = Form("tr,en", description="OCR dil kodu (tr, en veya tr,en)")
 ):
     """
     Görüntü dosyası yükle ve OCR ile işle
     
     Args:
         file: Görüntü dosyası (JPG, PNG, JPEG)
-        language: OCR için dil seçimi (tur=Türkçe, eng=İngilizce, tur+eng=Her ikisi)
+        language: OCR için dil seçimi (tr=Türkçe, en=İngilizce, tr,en=Her ikisi)
     
     Returns:
         ImageOCRResponse: İşlenmiş görüntü verisi
@@ -178,20 +178,17 @@ async def upload_image(
         
         logger.info(f"📷 Görüntü dosyası kaydedildi: {file.filename}")
         
-        # Dil ayarını güncelle
-        ocr_language = language.replace(',', '+')  # tr,en -> tur+eng
-        if 'tr' in language:
-            ocr_language = ocr_language.replace('tr', 'tur')
-        if 'en' in language:
-            ocr_language = ocr_language.replace('en', 'eng')
+        # Dil ayarını Tesseract formatına çevir (tr,en -> tur+eng)
+        lang_map = {'tr': 'tur', 'en': 'eng'}
+        languages = [lang.strip() for lang in language.split(',')]
+        tesseract_langs = [lang_map.get(lang, lang) for lang in languages]
+        ocr_language = '+'.join(tesseract_langs)
         
-        logger.info(f"🌐 Seçilen dil: {ocr_language}")
+        logger.info(f"🌐 Seçilen diller: {language} -> Tesseract: {ocr_language}")
         
         # Servisi oluştur ve görüntüyü işle
         from app.services.pdf_service import PDFService
-        
-        # Dilleri liste olarak gönder (process_image için farklı format)
-        service = PDFService(languages=[])  # Image için dil gerekmiyor
+        service = PDFService(languages=[])  # Image için EasyOCR gerekmez
         
         # Görüntüyü işle
         result = await service.process_image(str(file_path), language=ocr_language)
