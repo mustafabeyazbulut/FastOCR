@@ -1,11 +1,11 @@
-# Python 3.11 slim image kullan
-FROM python:3.11-slim
+# Python 3.11 slim image kullan (Debian Bookworm - stable)
+FROM python:3.11-slim-bookworm
 
 # Çalışma dizini
 WORKDIR /app
 
 # Sistem bağımlılıklarını yükle
-RUN apt-get update && apt-get install -y \
+RUN apt-get update --fix-missing && apt-get install -y --no-install-recommends \
     # OpenCV ve görüntü işleme için
     libgl1-mesa-glx \
     libglib2.0-0 \
@@ -13,13 +13,17 @@ RUN apt-get update && apt-get install -y \
     libxext6 \
     libxrender-dev \
     libgomp1 \
-    # Tesseract OCR
+    # Tesseract OCR binary
     tesseract-ocr \
-    tesseract-ocr-tur \
-    tesseract-ocr-eng \
-    # Wget (model indirme için)
+    # Wget (model ve dil verisi indirme için)
     wget \
     && rm -rf /var/lib/apt/lists/*
+
+# Tesseract dil verilerini manuel olarak indir (Türkçe ve İngilizce)
+RUN mkdir -p /usr/share/tesseract-ocr/5/tessdata && \
+    wget -q https://github.com/tesseract-ocr/tessdata/raw/main/tur.traineddata -O /usr/share/tesseract-ocr/5/tessdata/tur.traineddata && \
+    wget -q https://github.com/tesseract-ocr/tessdata/raw/main/eng.traineddata -O /usr/share/tesseract-ocr/5/tessdata/eng.traineddata && \
+    echo "✅ Tesseract dil verileri yüklendi (Türkçe + İngilizce)"
 
 # Python bağımlılıklarını kopyala ve yükle
 COPY requirements.txt .
