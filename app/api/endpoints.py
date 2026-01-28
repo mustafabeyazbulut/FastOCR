@@ -1,29 +1,20 @@
 """
 API Endpoints
-PDF işleme ve health check endpoint'leri
 """
 
-from fastapi import APIRouter, UploadFile, File, Form, HTTPException
+from fastapi import APIRouter, UploadFile, File, HTTPException
 from app.models.schemas import PDFProcessResponse, HealthResponse, PageData, FileInfo, ImageOCRResponse
-from typing import Optional
 import os
-import logging
 import shutil
 from pathlib import Path
-
-logger = logging.getLogger(__name__)
+import uuid
 
 router = APIRouter()
 
 
 @router.get("/health", response_model=HealthResponse)
 async def health_check():
-    """
-    Servis sağlık kontrolü
-    
-    Returns:
-        HealthResponse: Servis durumu
-    """
+    """Servis saglik kontrolu"""
     from app.services.pdf_service import default_pdf_service
     return HealthResponse(
         status="healthy",
@@ -33,201 +24,106 @@ async def health_check():
 
 
 @router.post("/upload-pdf", response_model=PDFProcessResponse)
-async def upload_pdf(
-    file: UploadFile = File(..., description="Yüklenecek PDF dosyası"),
-    language: Optional[str] = Form("tr,en", description="OCR dil kodu (tr, en veya tr,en)")
-):
+async def upload_pdf(file: UploadFile = File(..., description="PDF dosyasi")):
     """
-    PDF dosyası yükle ve OCR ile işle
-    
-    Args:
-        file: PDF dosyası
-        language: OCR için dil seçimi (tr=Türkçe, en=İngilizce, tr,en=Her ikisi)
-    
-    Returns:
-        PDFProcessResponse: İşlenmiş PDF verisi
+    PDF dosyasi yukle ve OCR ile isle
+    Otomatik olarak Turkce ve Ingilizce destekler
     """
-    # Dosya uzantısı kontrolü
+    print(f"\n[PDF] Istek geldi: {file.filename}", flush=True)
+
     if not file.filename.endswith('.pdf'):
-        raise HTTPException(
-            status_code=400,
-            detail="Sadece PDF dosyaları yüklenebilir!"
-        )
-    
-    # Geçici dosya kaydetme
+        raise HTTPException(status_code=400, detail="Sadece PDF dosyalari yuklenebilir!")
+
     upload_dir = Path("uploads")
     upload_dir.mkdir(exist_ok=True)
-    
-    # UUID ile benzersiz dosya ismi oluştur
-    import uuid
-    unique_filename = f"{uuid.uuid4()}_{file.filename}"
-    file_path = upload_dir / unique_filename
-    
+    file_path = upload_dir / f"{uuid.uuid4()}_{file.filename}"
+
     try:
-        # Dosyayı kaydet
         with open(file_path, "wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
-        
-        logger.info(f"📄 PDF dosyası kaydedildi: {file.filename}")
-        
-        # Dil ayarını güncelle
-        languages = [lang.strip() for lang in language.split(",")]
-        logger.info(f"🌐 Seçilen diller: {languages}")
-        
-        # Seçilen diller için PDFService oluştur
+
         from app.services.pdf_service import PDFService
-        service = PDFService(languages=languages)
-        
-        # PDF'i işle
+        service = PDFService()
         result = await service.process_pdf(str(file_path))
-        
-        # Hata kontrolü
+
         if "error" in result:
-            raise HTTPException(
-                status_code=500,
-                detail=f"PDF işleme hatası: {result['error']}"
-            )
-        
-        # Response formatla
+            raise HTTPException(status_code=500, detail=f"PDF isleme hatasi: {result['error']}")
+
         pages_list = []
         for page_num, content in sorted(result.get("pages", {}).items()):
-            # Sayfa numarasını içeriğe ekle
-            formatted_content = f"{page_num}. Sayfa:\n{content}"
             pages_list.append(PageData(
                 page_number=page_num,
-                content=formatted_content
+                content=f"{page_num}. Sayfa:\n{content}"
             ))
-        
-        file_info = FileInfo(
-            filename=result["file_info"]["filename"],
-            size_bytes=result["file_info"]["size_bytes"],
-            total_pages=result["total_pages"]
-        )
-        
-        logger.info(f"✅ PDF başarıyla işlendi: {result['total_pages']} sayfa, {result['total_characters']} karakter")
-        
+
+        print(f"[PDF] Cevap donduruldu: {result['total_pages']} sayfa, {result['total_characters']} karakter\n", flush=True)
+
         return PDFProcessResponse(
             success=True,
-            message=f"PDF başarıyla işlendi! {result['total_pages']} sayfa, {result['total_characters']} karakter.",
-            file_info=file_info,
+            message=f"PDF islendi: {result['total_pages']} sayfa, {result['total_characters']} karakter",
+            file_info=FileInfo(
+                filename=result["file_info"]["filename"],
+                size_bytes=result["file_info"]["size_bytes"],
+                total_pages=result["total_pages"]
+            ),
             method=result["method"],
             pages=pages_list,
             total_characters=result["total_characters"]
         )
-        
+
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"❌ İşlem hatası: {e}")
-        import traceback
-        traceback.print_exc()
-        
-        raise HTTPException(
-            status_code=500,
-            detail=f"Beklenmeyen hata: {str(e)}"
-        )
-    
+        raise HTTPException(status_code=500, detail=f"Hata: {str(e)}")
     finally:
-        # Geçici dosyayı temizle
         if file_path.exists():
-            try:
-                os.remove(file_path)
-                logger.info(f"🗑️ Geçici dosya silindi: {file.filename}")
-            except Exception as e:
-                logger.warning(f"⚠️ Dosya silinemedi: {e}")
+            os.remove(file_path)
 
 
 @router.post("/upload-image", response_model=ImageOCRResponse)
-async def upload_image(
-    file: UploadFile = File(..., description="Yüklenecek görüntü dosyası (JPG, PNG, JPEG)"),
-    language: Optional[str] = Form("tr,en", description="OCR dil kodu (tr, en veya tr,en)")
-):
+async def upload_image(file: UploadFile = File(..., description="Goruntu dosyasi (JPG, PNG)")):
     """
-    Görüntü dosyası yükle ve OCR ile işle
-    
-    Args:
-        file: Görüntü dosyası (JPG, PNG, JPEG)
-        language: OCR için dil seçimi (tr=Türkçe, en=İngilizce, tr,en=Her ikisi)
-    
-    Returns:
-        ImageOCRResponse: İşlenmiş görüntü verisi
+    Goruntu dosyasi yukle ve OCR ile isle
+    Otomatik olarak Turkce ve Ingilizce destekler
     """
-    # Dosya uzantısı kontrolü
+    print(f"\n[IMAGE] Istek geldi: {file.filename}", flush=True)
+
     allowed_extensions = ['.jpg', '.jpeg', '.png', '.bmp', '.tiff', '.tif']
     file_ext = os.path.splitext(file.filename)[1].lower()
-    
+
     if file_ext not in allowed_extensions:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Sadece görüntü dosyaları yüklenebilir! Desteklenen: {', '.join(allowed_extensions)}"
-        )
-    
-    # Geçici dosya kaydetme
+        raise HTTPException(status_code=400, detail=f"Desteklenen formatlar: {', '.join(allowed_extensions)}")
+
     upload_dir = Path("uploads")
     upload_dir.mkdir(exist_ok=True)
-    
-    # UUID ile benzersiz dosya ismi oluştur
-    import uuid
-    unique_filename = f"{uuid.uuid4()}_{file.filename}"
-    file_path = upload_dir / unique_filename
-    
+    file_path = upload_dir / f"{uuid.uuid4()}_{file.filename}"
+
     try:
-        # Dosyayı kaydet
         with open(file_path, "wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
-        
-        logger.info(f"📷 Görüntü dosyası kaydedildi: {file.filename}")
-        
-        # Dil ayarını Tesseract formatına çevir (tr,en -> tur+eng)
-        lang_map = {'tr': 'tur', 'en': 'eng'}
-        languages = [lang.strip() for lang in language.split(',')]
-        tesseract_langs = [lang_map.get(lang, lang) for lang in languages]
-        ocr_language = '+'.join(tesseract_langs)
-        
-        logger.info(f"🌐 Seçilen diller: {language} -> Tesseract: {ocr_language}")
-        
-        # Servisi oluştur ve görüntüyü işle
+
         from app.services.pdf_service import PDFService
-        service = PDFService(languages=[])  # Image için EasyOCR gerekmez
-        
-        # Görüntüyü işle
-        result = await service.process_image(str(file_path), language=ocr_language)
-        
-        # Hata kontrolü
+        service = PDFService()
+        result = await service.process_image(str(file_path))
+
         if "error" in result:
-            raise HTTPException(
-                status_code=500,
-                detail=f"Görüntü işleme hatası: {result['error']}"
-            )
-        
-        logger.info(f"✅ Görüntü başarıyla işlendi: {result['total_characters']} karakter")
-        
+            raise HTTPException(status_code=500, detail=f"Goruntu isleme hatasi: {result['error']}")
+
+        print(f"[IMAGE] Cevap donduruldu: {result['total_characters']} karakter\n", flush=True)
+
         return ImageOCRResponse(
             success=True,
-            message=f"Görüntü başarıyla işlendi! {result['total_characters']} karakter.",
+            message=f"Goruntu islendi: {result['total_characters']} karakter",
             file_info=result.get("file_info"),
             method=result["method"],
             text=result["text"],
             total_characters=result["total_characters"]
         )
-        
+
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"❌ İşlem hatası: {e}")
-        import traceback
-        traceback.print_exc()
-        
-        raise HTTPException(
-            status_code=500,
-            detail=f"Beklenmeyen hata: {str(e)}"
-        )
-    
+        raise HTTPException(status_code=500, detail=f"Hata: {str(e)}")
     finally:
-        # Geçici dosyayı temizle
         if file_path.exists():
-            try:
-                os.remove(file_path)
-                logger.info(f"🗑️ Geçici dosya silindi: {file.filename}")
-            except Exception as e:
-                logger.warning(f"⚠️ Dosya silinemedi: {e}")
+            os.remove(file_path)

@@ -1,19 +1,19 @@
-# FastAPI ve Web Framework
+# FastAPI
 fastapi>=0.109.0,<1.0.0
 uvicorn[standard]>=0.27.0,<1.0.0
 python-multipart>=0.0.6
 aiofiles>=23.2.1
 
 # PDF ve OCR
-PyMuPDF>=1.23.0,<2.0.0
-easyocr>=1.7.0,<2.0.0
-pytesseract>=0.3.10
+pymupdf>=1.24.0
+easyocr>=1.7.0
 Pillow>=10.0.0,<11.0.0
 numpy>=1.24.0,<2.0.0
-opencv-python-headless>=4.8.0  # EasyOCR bağımlılığı
+opencv-python>=4.8.0
 
 # Utilities
-requests>=2.31.0  # Healthcheck için
+requests>=2.31.0
+python-dotenv>=1.0.0
 
 # Testing
 pytest>=7.4.0
